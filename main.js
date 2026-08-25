@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process"; // CHANGED: spawnSync -> spawn (non-blocking)
 import Database from "better-sqlite3";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,10 +82,65 @@ ipcMain.on("get-latest-sr-no", (event) => {
 });
 
 // ==========================================
-// 2. IPC Handler: Add Customer & Generate Documents
+// Helper: run generate_doc.py WITHOUT blocking the main process,
+// and resolve/reject once it's done. This replaces spawnSync.
 // ==========================================
-ipcMain.on("add-customer", (event, customer) => {
+function generateDocuments(pythonPayload) {
+  return new Promise((resolve, reject) => {
+    const templateDirExists = true; // kept for clarity, no behavior change
+    const pythonScriptPath = path.join(__dirname, "generate_doc.py");
+    const pythonExecutable =
+      process.platform === "win32" ? "python" : "python3";
+
+    const pythonProcess = spawn(pythonExecutable, [pythonScriptPath], {
+      shell: false,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    pythonProcess.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    pythonProcess.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    pythonProcess.on("error", (err) => {
+      console.error("Python execution error:", err);
+      reject(err);
+    });
+
+    pythonProcess.on("close", () => {
+      if (stderr) console.error("Python Stderr Output:", stderr);
+      try {
+        const result = JSON.parse(stdout.trim());
+        resolve(result);
+      } catch (parseErr) {
+        console.error("Failed to parse Python response:", stdout);
+        reject(new Error("Failed to parse Python response: " + stdout));
+      }
+    });
+
+    pythonProcess.stdin.write(pythonPayload);
+    pythonProcess.stdin.end();
+  });
+}
+
+// ==========================================
+// 2. IPC Handler: Add Customer & Generate Documents
+// CHANGED: ipcMain.on(...sendSync) -> ipcMain.handle(...invoke), async,
+// with progress events sent back to the renderer at each stage.
+// ==========================================
+ipcMain.handle("add-customer", async (event, customer) => {
+  const sender = event.sender;
+  const sendProgress = (step, total, message) => {
+    sender.send("add-customer-progress", { step, total, message });
+  };
+
   try {
+    sendProgress(1, 4, "Preparing customer folder...");
+
     let { sr_no, name, address, date, signature_path } = customer;
 
     if (!sr_no || isNaN(parseInt(sr_no, 10))) {
@@ -117,8 +172,9 @@ ipcMain.on("add-customer", (event, customer) => {
       fs.writeFileSync(savedSignaturePath, buffer);
     }
 
+    sendProgress(2, 4, "Signature saved. Generating documents...");
+
     const templateDir = path.join(__dirname, "template");
-    const pythonScriptPath = path.join(__dirname, "generate_doc.py");
 
     const pythonPayload = JSON.stringify({
       template_dir: templateDir,
@@ -138,32 +194,15 @@ ipcMain.on("add-customer", (event, customer) => {
       cost: customer.cost,
     });
 
-    const pythonExecutable =
-      process.platform === "win32" ? "python" : "python3";
-    const pythonProcess = spawnSync(pythonExecutable, [pythonScriptPath], {
-      input: pythonPayload,
-      encoding: "utf-8",
-      shell: false,
-    });
+    const pyResult = await generateDocuments(pythonPayload);
 
-    if (pythonProcess.error) {
-      console.error("Python execution error:", pythonProcess.error);
-    } else if (pythonProcess.stderr) {
-      console.error("Python Stderr Output:", pythonProcess.stderr);
+    if (!pyResult.success) {
+      console.error("Document generation error:", pyResult.error);
+    } else {
+      console.log("Documents generated successfully:", pyResult);
     }
 
-    if (pythonProcess.stdout) {
-      try {
-        const pyResult = JSON.parse(pythonProcess.stdout.trim());
-        if (!pyResult.success) {
-          console.error("Document generation error:", pyResult.error);
-        } else {
-          console.log("Documents generated successfully:", pyResult);
-        }
-      } catch (parseErr) {
-        console.error("Failed to parse Python response:", pythonProcess.stdout);
-      }
-    }
+    sendProgress(3, 4, "Documents generated. Saving to database...");
 
     const stmt = db.prepare(`
       INSERT INTO customers (
@@ -185,7 +224,9 @@ ipcMain.on("add-customer", (event, customer) => {
       signature_path: savedSignaturePath,
     });
 
-    event.returnValue = {
+    sendProgress(4, 4, "Done!");
+
+    return {
       success: true,
       id: info.lastInsertRowid,
       sr_no,
@@ -193,7 +234,7 @@ ipcMain.on("add-customer", (event, customer) => {
     };
   } catch (err) {
     console.error("Database Insertion Error:", err);
-    event.returnValue = { success: false, error: err.message };
+    return { success: false, error: err.message };
   }
 });
 

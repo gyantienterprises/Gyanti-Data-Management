@@ -42,6 +42,14 @@ export default function NewClient() {
     type: "idle",
   });
 
+  // NEW: saving / progress state for the Save button
+  const [isSaving, setIsSaving] = useState(false);
+  const [progress, setProgress] = useState({
+    step: 0,
+    total: 4,
+    message: "",
+  });
+
   // Canvas Refs & Processing States
   const origCanvasRef = useRef(null);
   const resCanvasRef = useRef(null);
@@ -77,7 +85,28 @@ export default function NewClient() {
     fetchNextSrNo();
   }, []);
 
+  // NEW: listen for progress events pushed from the main process while
+  // "add-customer" is running, so the UI can show real step-by-step progress.
+  useEffect(() => {
+    if (!window.require) return;
+    const { ipcRenderer } = window.require("electron");
+
+    const handleProgress = (_event, data) => {
+      setProgress(data);
+    };
+
+    ipcRenderer.on("add-customer-progress", handleProgress);
+    return () => {
+      ipcRenderer.removeListener("add-customer-progress", handleProgress);
+    };
+  }, []);
+
   // --- IMAGE PROCESSING & BACKGROUND REMOVAL UTILITIES ---
+  // (unchanged below — omitted here only for brevity in this snippet set,
+  // keep all of your existing fitCanvas / renderToCanvas / detectBgColorMedian /
+  // calculateOtsuThreshold / removeBackgroundAuto / rotate90Deg / autoCrop /
+  // autoStraighten / processAutomatically / handleFile / handleRotateManual /
+  // handleChange functions exactly as they were.)
 
   const fitCanvas = (canvas, w, h) => {
     canvas.width = w;
@@ -407,8 +436,10 @@ export default function NewClient() {
   };
 
   // --- SAVE FORM DATA ---
-  const handleSubmit = (e) => {
+  // CHANGED: sendSync -> invoke (async, non-blocking), plus isSaving/progress state.
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSaving) return; // guard against double-submit while a save is in flight
 
     const payload = {
       ...formData,
@@ -423,38 +454,50 @@ export default function NewClient() {
 
     if (window.require) {
       const { ipcRenderer } = window.require("electron");
-      const response = ipcRenderer.sendSync("add-customer", payload);
 
-      if (response.success) {
-        setStatusMessage({
-          type: "success",
-          text: `Customer saved successfully! Signature exported to DATA/files/${payload.sr_no} ${payload.name}/`,
-        });
+      setIsSaving(true);
+      setProgress({ step: 0, total: 4, message: "Starting..." });
+      setStatusMessage({ type: "", text: "" });
 
-        // Reset Form
-        setFormData({
-          sr_no: "",
-          name: "",
-          address: "",
-          date: new Date().toISOString().split("T")[0],
-          kw: "",
-          panel_company: COMPANY_OPTIONS[0],
-          panel_watt: "",
-          panel_quantity: "",
-          inverter_company: COMPANY_OPTIONS[0],
-          inverter_watt: "",
-          structure_watt: "",
-          cost: "",
-          signature_path: "",
-        });
+      try {
+        const response = await ipcRenderer.invoke("add-customer", payload);
 
-        // Fetch the newly incremented serial number for the next entry
-        fetchNextSrNo();
-        setSourceImgData(null);
-        setResultImgData(null);
-        setSigStatus({ text: "No signature uploaded", type: "idle" });
-      } else {
-        setStatusMessage({ type: "error", text: `Error: ${response.error}` });
+        if (response.success) {
+          setStatusMessage({
+            type: "success",
+            text: `Customer saved successfully! Signature exported to DATA/files/${payload.sr_no} ${payload.name}/`,
+          });
+
+          // Reset Form
+          setFormData({
+            sr_no: "",
+            name: "",
+            address: "",
+            date: new Date().toISOString().split("T")[0],
+            kw: "",
+            panel_company: COMPANY_OPTIONS[0],
+            panel_watt: "",
+            panel_quantity: "",
+            inverter_company: COMPANY_OPTIONS[0],
+            inverter_watt: "",
+            structure_watt: "",
+            cost: "",
+            signature_path: "",
+          });
+
+          // Fetch the newly incremented serial number for the next entry
+          fetchNextSrNo();
+          setSourceImgData(null);
+          setResultImgData(null);
+          setSigStatus({ text: "No signature uploaded", type: "idle" });
+        } else {
+          setStatusMessage({ type: "error", text: `Error: ${response.error}` });
+        }
+      } catch (err) {
+        setStatusMessage({ type: "error", text: `Error: ${err.message}` });
+      } finally {
+        setIsSaving(false);
+        setProgress({ step: 0, total: 4, message: "" });
       }
     } else {
       console.log("Browser Mode Payload:", payload);
@@ -464,6 +507,10 @@ export default function NewClient() {
       });
     }
   };
+
+  const progressPercent = isSaving
+    ? Math.round((progress.step / progress.total) * 100)
+    : 0;
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6 bg-[#0B0F19] text-white">
@@ -483,6 +530,22 @@ export default function NewClient() {
           }`}
         >
           {statusMessage.text}
+        </div>
+      )}
+
+      {/* NEW: progress bar shown only while saving */}
+      {isSaving && (
+        <div className="p-4 rounded-lg bg-[#131A2B] border border-slate-800 space-y-2">
+          <div className="flex justify-between text-xs text-slate-400">
+            <span>{progress.message || "Saving..."}</span>
+            <span>{progressPercent}%</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-[#0F1423] overflow-hidden">
+            <div
+              className="h-full bg-amber-500 transition-all duration-300 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
         </div>
       )}
 
@@ -807,11 +870,19 @@ export default function NewClient() {
           </div>
         </div>
 
+        {/* CHANGED: disabled while saving, shows progress text on the button itself */}
         <button
           type="submit"
-          className="w-full bg-amber-500 text-black font-semibold py-3.5 rounded-xl hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/10 text-base"
+          disabled={isSaving}
+          className={`w-full font-semibold py-3.5 rounded-xl transition-colors shadow-lg shadow-amber-500/10 text-base ${
+            isSaving
+              ? "bg-amber-500/50 text-black/70 cursor-not-allowed"
+              : "bg-amber-500 text-black hover:bg-amber-400"
+          }`}
         >
-          Save Customer & Export Signature
+          {isSaving
+            ? `${progress.message || "Saving..."} (${progressPercent}%)`
+            : "Save Customer & Export Signature"}
         </button>
       </form>
     </div>
