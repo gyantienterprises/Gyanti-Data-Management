@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { spawnSync } from "child_process";
 import Database from "better-sqlite3";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -64,9 +65,8 @@ function initDatabase() {
   console.log("Database initialized successfully at:", dbPath);
 }
 
-// IPC Listener to handle adding new customers and saving signature files
 // ==========================================
-// 1. New Handler: Fetch Latest SR NO Sync
+// 1. IPC Handler: Fetch Latest SR NO Sync
 // ==========================================
 ipcMain.on("get-latest-sr-no", (event) => {
   try {
@@ -82,64 +82,97 @@ ipcMain.on("get-latest-sr-no", (event) => {
 });
 
 // ==========================================
-// 2. Updated Handler: Add Customer
+// 2. IPC Handler: Add Customer & Generate Documents
 // ==========================================
-// ==========================================
-// 1. New Handler: Fetch Latest SR NO Sync
-// ==========================================
-ipcMain.on('get-latest-sr-no', (event) => {
+ipcMain.on("add-customer", (event, customer) => {
   try {
-    const row = db.prepare('SELECT MAX(CAST(sr_no AS INTEGER)) as max_sr FROM customers').get();
-    const latestSrNo = row && row.max_sr ? row.max_sr : 0;
-    event.returnValue = { success: true, latestSrNo };
-  } catch (err) {
-    console.error('Error fetching latest sr_no:', err);
-    event.returnValue = { success: false, latestSrNo: 0, error: err.message };
-  }
-});
-
-// ==========================================
-// 2. Updated Handler: Add Customer
-// ==========================================
-ipcMain.on('add-customer', (event, customer) => {
-  try {
-    let { sr_no, name, signature_path } = customer;
+    let { sr_no, name, address, date, signature_path } = customer;
 
     // Auto-calculate sr_no if not provided or invalid
     if (!sr_no || isNaN(parseInt(sr_no, 10))) {
-      const maxRow = db.prepare('SELECT MAX(CAST(sr_no AS INTEGER)) as max_sr FROM customers').get();
+      const maxRow = db
+        .prepare("SELECT MAX(CAST(sr_no AS INTEGER)) as max_sr FROM customers")
+        .get();
       sr_no = (maxRow && maxRow.max_sr ? maxRow.max_sr : 0) + 1;
     } else {
       sr_no = parseInt(sr_no, 10);
     }
 
     // Sanitize folder & file names to handle special characters safely
-    const safeName = (name || 'Unknown').replace(/[/\\?%*:|"<>]/g, '_').trim();
+    const safeName = (name || "Unknown").replace(/[/\\?%*:|"<>]/g, "_").trim();
     const folderName = `${sr_no} ${safeName}`;
-    const fileName = `${safeName}_signature.png`;
+    const sigFileName = `${safeName}_signature.png`;
 
-    // Directory path: DATA/files/<sr_no customername>/
-    const targetDir = path.join(__dirname, 'DATA', 'files', folderName);
+    // Target Directory path: DATA/files/<sr_no customername>/
+    const targetDir = path.join(__dirname, "DATA", "files", folderName);
 
     // Create the customer directory if it doesn't exist
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    let savedSignaturePath = '';
+    let savedSignaturePath = "";
 
     // Convert Base64 Signature string into PNG file and write to disk
-    if (signature_path && signature_path.startsWith('data:image')) {
-      const base64Data = signature_path.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
+    if (signature_path && signature_path.startsWith("data:image")) {
+      const base64Data = signature_path.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
 
-      const filePath = path.join(targetDir, fileName);
-      fs.writeFileSync(filePath, buffer);
-
-      savedSignaturePath = filePath;
+      savedSignaturePath = path.join(targetDir, sigFileName);
+      fs.writeFileSync(savedSignaturePath, buffer);
     }
 
-    // Insert record with disk file path saved into the database
+    // Paths for Document Generation
+    const templateDir = path.join(__dirname, "template");
+    const pythonScriptPath = path.join(__dirname, "generate_doc.py");
+
+    const pythonPayload = JSON.stringify({
+      template_dir: templateDir,
+      target_dir: targetDir,
+      sr_no: sr_no,
+      customer_name: name,
+      customer_address: address,
+      date: date,
+      signature_path: savedSignaturePath,
+      kw: customer.kw,
+      panel_company: customer.panel_company,
+      panel_watt: customer.panel_watt,
+      panel_quantity: customer.panel_quantity,
+      inverter_company: customer.inverter_company,
+      inverter_watt: customer.inverter_watt,
+      structure_watt: customer.structure_watt,
+      cost: customer.cost,
+    });
+
+    // Execute Python script safely by piping JSON payload via input stream (stdin)
+    const pythonExecutable =
+      process.platform === "win32" ? "python" : "python3";
+    const pythonProcess = spawnSync(pythonExecutable, [pythonScriptPath], {
+      input: pythonPayload, // Send data safely via stdin
+      encoding: "utf-8",
+      shell: false, // Resolves DEP0190 security warning
+    });
+
+    if (pythonProcess.error) {
+      console.error("Python execution error:", pythonProcess.error);
+    } else if (pythonProcess.stderr) {
+      console.error("Python Stderr Output:", pythonProcess.stderr);
+    }
+
+    if (pythonProcess.stdout) {
+      try {
+        const pyResult = JSON.parse(pythonProcess.stdout.trim());
+        if (!pyResult.success) {
+          console.error("Document generation error:", pyResult.error);
+        } else {
+          console.log("Documents generated successfully:", pyResult);
+        }
+      } catch (parseErr) {
+        console.error("Failed to parse Python response:", pythonProcess.stdout);
+      }
+    }
+
+    // Insert customer record with disk file path saved into database
     const stmt = db.prepare(`
       INSERT INTO customers (
         sr_no, name, address, date, kw,
@@ -156,18 +189,18 @@ ipcMain.on('add-customer', (event, customer) => {
 
     const info = stmt.run({
       ...customer,
-      sr_no, // Overwrite with parsed integer / calculated auto-increment
-      signature_path: savedSignaturePath
+      sr_no,
+      signature_path: savedSignaturePath,
     });
 
-    event.returnValue = { 
-      success: true, 
-      id: info.lastInsertRowid, 
-      sr_no, 
-      signature_path: savedSignaturePath 
+    event.returnValue = {
+      success: true,
+      id: info.lastInsertRowid,
+      sr_no,
+      signature_path: savedSignaturePath,
     };
   } catch (err) {
-    console.error('Database Insertion Error:', err);
+    console.error("Database Insertion Error:", err);
     event.returnValue = { success: false, error: err.message };
   }
 });
