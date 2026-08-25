@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -88,7 +88,6 @@ ipcMain.on("add-customer", (event, customer) => {
   try {
     let { sr_no, name, address, date, signature_path } = customer;
 
-    // Auto-calculate sr_no if not provided or invalid
     if (!sr_no || isNaN(parseInt(sr_no, 10))) {
       const maxRow = db
         .prepare("SELECT MAX(CAST(sr_no AS INTEGER)) as max_sr FROM customers")
@@ -98,22 +97,18 @@ ipcMain.on("add-customer", (event, customer) => {
       sr_no = parseInt(sr_no, 10);
     }
 
-    // Sanitize folder & file names to handle special characters safely
     const safeName = (name || "Unknown").replace(/[/\\?%*:|"<>]/g, "_").trim();
     const folderName = `${sr_no} ${safeName}`;
     const sigFileName = `${safeName}_signature.png`;
 
-    // Target Directory path: DATA/files/<sr_no customername>/
     const targetDir = path.join(__dirname, "DATA", "files", folderName);
 
-    // Create the customer directory if it doesn't exist
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
     let savedSignaturePath = "";
 
-    // Convert Base64 Signature string into PNG file and write to disk
     if (signature_path && signature_path.startsWith("data:image")) {
       const base64Data = signature_path.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
@@ -122,7 +117,6 @@ ipcMain.on("add-customer", (event, customer) => {
       fs.writeFileSync(savedSignaturePath, buffer);
     }
 
-    // Paths for Document Generation
     const templateDir = path.join(__dirname, "template");
     const pythonScriptPath = path.join(__dirname, "generate_doc.py");
 
@@ -144,13 +138,12 @@ ipcMain.on("add-customer", (event, customer) => {
       cost: customer.cost,
     });
 
-    // Execute Python script safely by piping JSON payload via input stream (stdin)
     const pythonExecutable =
       process.platform === "win32" ? "python" : "python3";
     const pythonProcess = spawnSync(pythonExecutable, [pythonScriptPath], {
-      input: pythonPayload, // Send data safely via stdin
+      input: pythonPayload,
       encoding: "utf-8",
-      shell: false, // Resolves DEP0190 security warning
+      shell: false,
     });
 
     if (pythonProcess.error) {
@@ -172,7 +165,6 @@ ipcMain.on("add-customer", (event, customer) => {
       }
     }
 
-    // Insert customer record with disk file path saved into database
     const stmt = db.prepare(`
       INSERT INTO customers (
         sr_no, name, address, date, kw,
@@ -202,6 +194,139 @@ ipcMain.on("add-customer", (event, customer) => {
   } catch (err) {
     console.error("Database Insertion Error:", err);
     event.returnValue = { success: false, error: err.message };
+  }
+});
+
+// ==========================================
+// 3. IPC Handler: Fetch All Customers with Bill Date
+// ==========================================
+ipcMain.on("get-all-customers", (event) => {
+  try {
+    const query = `
+      SELECT 
+        c.id,
+        c.sr_no,
+        c.name,
+        c.address,
+        c.date as customer_date,
+        c.kw,
+        c.panel_company,
+        c.panel_watt,
+        c.panel_quantity,
+        c.inverter_company,
+        c.inverter_watt,
+        c.structure_watt,
+        c.cost,
+        c.signature_path,
+        i.date AS bill_date
+      FROM customers c
+      LEFT JOIN invoices i ON c.sr_no = i.customer_sr_no
+      ORDER BY c.sr_no DESC
+    `;
+    const customers = db.prepare(query).all();
+    event.returnValue = { success: true, customers };
+  } catch (err) {
+    console.error("Error fetching customers:", err);
+    event.returnValue = { success: false, customers: [], error: err.message };
+  }
+});
+
+// ==========================================
+// 4. IPC Handler: Delete Customer & Related Data
+// ==========================================
+ipcMain.on("delete-customer", (event, { id, sr_no, name }) => {
+  try {
+    const stmt = db.prepare("DELETE FROM customers WHERE id = ?");
+    stmt.run(id);
+
+    const safeName = (name || "Unknown").replace(/[/\\?%*:|"<>]/g, "_").trim();
+    const folderName = `${sr_no} ${safeName}`;
+    const targetDir = path.join(__dirname, "DATA", "files", folderName);
+
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+
+    event.returnValue = { success: true };
+  } catch (err) {
+    console.error("Error deleting customer:", err);
+    event.returnValue = { success: false, error: err.message };
+  }
+});
+
+// ==========================================
+// 5. IPC Handler: Update Customer Data
+// ==========================================
+ipcMain.on("update-customer", (event, customer) => {
+  try {
+    const stmt = db.prepare(`
+      UPDATE customers 
+      SET name = @name, address = @address, kw = @kw, cost = @cost
+      WHERE id = @id
+    `);
+    stmt.run(customer);
+    event.returnValue = { success: true };
+  } catch (err) {
+    console.error("Error updating customer:", err);
+    event.returnValue = { success: false, error: err.message };
+  }
+});
+
+// ==========================================
+// 6. IPC Handler: Fetch Client Directory Files
+// ==========================================
+ipcMain.on("get-client-files", (event, { sr_no, name }) => {
+  try {
+    const safeName = (name || "Unknown").replace(/[/\\?%*:|"<>]/g, "_").trim();
+    const folderName = `${sr_no} ${safeName}`;
+    const targetDir = path.join(__dirname, "DATA", "files", folderName);
+
+    if (!fs.existsSync(targetDir)) {
+      return (event.returnValue = { success: true, files: [], dirPath: "" });
+    }
+
+    const fileList = fs.readdirSync(targetDir).map((fileName) => {
+      const fullPath = path.join(targetDir, fileName);
+      const isSignature = fileName.toLowerCase().includes("signature");
+      let base64Image = null;
+
+      // Convert PNG/JPG signature files directly into Base64 Data URI for instant rendering
+      if (isSignature && fs.existsSync(fullPath)) {
+        try {
+          const fileBuffer = fs.readFileSync(fullPath);
+          const ext =
+            path.extname(fileName).replace(".", "").toLowerCase() || "png";
+          base64Image = `data:image/${ext};base64,${fileBuffer.toString("base64")}`;
+        } catch (imgErr) {
+          console.error("Error reading signature image:", imgErr);
+        }
+      }
+
+      return {
+        name: fileName,
+        path: fullPath,
+        fileUrl: base64Image,
+        isSignature,
+        isPDF: fileName.toLowerCase().endsWith(".pdf"),
+      };
+    });
+
+    event.returnValue = { success: true, files: fileList, dirPath: targetDir };
+  } catch (err) {
+    console.error("Error fetching client files:", err);
+    event.returnValue = { success: false, files: [], error: err.message };
+  }
+});
+
+// ==========================================
+// 7. IPC Handler: Open File in System Default App
+// ==========================================
+ipcMain.on("open-file", (event, filePath) => {
+  if (fs.existsSync(filePath)) {
+    shell.openPath(filePath);
+    event.returnValue = { success: true };
+  } else {
+    event.returnValue = { success: false, error: "File not found" };
   }
 });
 
