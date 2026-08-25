@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Analytics from './components/Analytics';
+import NewClient from './components/NewClient';
 
 const Placeholder = ({ name }) => (
-  <div className="p-8 text-gyanti-text">{name} Page Content</div>
+  <div className="p-8 text-[#A0AEC0]">{name} Page Content</div>
 );
 
 export default function App() {
@@ -14,7 +15,7 @@ export default function App() {
       case 'Analytics': return <Analytics />;
       case 'Client': return <Placeholder name="Client" />;
       case 'Bills': return <Placeholder name="Bills" />;
-      case 'New Entry': return <Placeholder name="New Entry" />;
+      case 'New Client': return <NewClient />;
       case 'Update Entry': return <Placeholder name="Update Entry" />;
       default: return <Analytics />;
     }

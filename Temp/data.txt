@@ -1,0 +1,27 @@
+SrNo
+Name 
+address
+Date
+KW
+panal company 
+panel Watt
+panel quantity 
+inverter company 
+inverter watt
+structure watt
+Cost
+signature
+
+for bill
+invoice No
+Date
+panal company
+panel watt
+panel quantity
+panel type
+panel total cost
+inverter company 
+inverter watt
+inverter total cost
+structure total cost 
+installation total cost 

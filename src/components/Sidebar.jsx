@@ -1,11 +1,11 @@
-import { Users, FileText, BarChart2, PlusCircle, Edit } from 'lucide-react';
+import { Users, FileText, BarChart2, UserPlus, Edit } from 'lucide-react';
 import logo from '../assets/logo.png';
 
 const navItems = [
   { name: 'Client', icon: Users },
   { name: 'Bills', icon: FileText },
   { name: 'Analytics', icon: BarChart2 },
-  { name: 'New Entry', icon: PlusCircle },
+  { name: 'New Client', icon: UserPlus },
   { name: 'Update Entry', icon: Edit },
 ];
 

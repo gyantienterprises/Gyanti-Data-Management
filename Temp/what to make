@@ -1,0 +1,27 @@
+Aim
+to make a web app that run locally on laptop and will operate local file 
+
+
+When app run it check for file name DATA inside root (if not then create one)
+this DATA folder will have all data 
+data will be store on SQLite inside DATA folder 
+excpet from this SQLite data 
+there will me one folder name (customer)
+inside customer there will me customer folder with name parten 
+(srno name)
+inside each customer folder there will be there 6 document 
+3are
+(srno name Agreement).docx
+(srno name Quotation).docx
+(srno name bill_invoceno).xml
+and other 3 will be the pdf of above file with same name 
+
+UI of the webapp will be 
+a left side bar with following options 
+Client
+Bills
+Analytics
+New Entry
+Update Entry
+
+

@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Auto Signature Cleaner & Straightener</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #f8fafc;
+            color: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e2e8f0;
+            max-width: 1100px;
+            width: 100%;
+            padding: 36px;
+        }
+        header {
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sub {
+            color: #64748b;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+        .upload-area {
+            border: 2px dashed #cbd5e1;
+            border-radius: 16px;
+            padding: 36px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: #f8fafc;
+            position: relative;
+        }
+        .upload-area:hover, .upload-area.drag-over {
+            border-color: #6366f1;
+            background-color: #f5f3ff;
+        }
+        .upload-area input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            width: 100%;
+            height: 100%;
+        }
+        .upload-icon {
+            font-size: 40px;
+            margin-bottom: 8px;
+        }
+        .upload-area p {
+            font-weight: 600;
+            font-size: 15px;
+            color: #334155;
+        }
+        .upload-area span {
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 28px;
+        }
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            .container {
+                padding: 20px;
+            }
+        }
+        .panel {
+            background: #f8fafc;
+            border-radius: 14px;
+            border: 1px solid #f1f5f9;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #334155;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .canvas-wrapper {
+            background: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 250px;
+            flex-grow: 1;
+            position: relative;
+        }
+        .canvas-wrapper canvas {
+            max-width: 100%;
+            max-height: 380px;
+            display: block;
+            background: repeating-conic-gradient(#cbd5e1 0% 25%, #fff 0% 50%) 0 0 / 16px 16px;
+        }
+        .badge {
+            background: #e0e7ff;
+            color: #4338ca;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .meta-info {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .meta-item {
+            background: #ffffff;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        .status-bar {
+            margin-top: 16px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            background: #f1f5f9;
+            color: #334155;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .dot.idle { background: #94a3b8; }
+        .dot.processing { background: #f59e0b; animation: pulse 1s infinite; }
+        .dot.done { background: #22c55e; }
+        .dot.error { background: #ef4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .footer-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            border: none;
+            background: #4f46e5;
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover {
+            background: #4338ca;
+            transform: translateY(-1px);
+        }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-outline {
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+        }
+        .btn-outline:hover {
+            background: #f8fafc;
+            border-color: #94a3b8;
+        }
+        .btn-success {
+            background: #16a34a;
+        }
+        .btn-success:hover {
+            background: #15803d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>✍️ Fully Auto Signature Cleaner</h1>
+            <div class="sub">Instant automatic background removal, auto-thresholding, and orientation detection.</div>
+        </header>
+
+        <!-- Dropzone -->
+        <div class="upload-area" id="dropZone">
+            <input type="file" accept="image/*" id="fileInput" />
+            <div class="upload-icon">📄</div>
+            <p>Drop your signature image here or click to browse</p>
+            <span>Supports PNG, JPG, WebP</span>
+        </div>
+
+        <!-- Canvas Grid -->
+        <div class="main-grid">
+            <!-- Source Panel -->
+            <div class="panel">
+                <div class="panel-title">Original Image</div>
+                <div class="canvas-wrapper">
+                    <canvas id="originalCanvas"></canvas>
+                </div>
+                <div class="meta-info" id="origMeta" style="display:none;">
+                    <span class="meta-item" id="origDim">-</span>
+                    <span class="meta-item" id="detectedBg">-</span>
+                </div>
+            </div>
+
+            <!-- Output Panel -->
+            <div class="panel">
+                <div class="panel-title">
+                    <span>Cleaned Output</span>
+                    <span class="badge" id="angleBadge">Auto</span>
+                </div>
+                <div class="canvas-wrapper">
+                    <canvas id="resultCanvas"></canvas>
+                </div>
+                <div class="meta-info" id="resMeta" style="display:none;">
+                    <span class="meta-item" id="resDim">-</span>
+                    <span class="meta-item" id="calcThreshold">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status & Actions -->
+        <div class="status-bar">
+            <span class="dot idle" id="statusDot"></span>
+            <span id="statusText">Ready — upload an image to process automatically</span>
+        </div>
+
+        <div class="footer-actions">
+            <button class="btn btn-success" id="downloadBtn" disabled>⬇ Download Clean PNG</button>
+            <button class="btn btn-outline" id="rotateBtn" disabled>↻ Rotate 90°</button>
+            <button class="btn btn-outline" id="flip180Btn" disabled>⇄ Flip 180°</button>
+            <button class="btn btn-outline" id="reprocessBtn" disabled>↺ Re-detect</button>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // Elements
+            const fileInput = document.getElementById('fileInput');
+            const dropZone = document.getElementById('dropZone');
+            const origCanvas = document.getElementById('originalCanvas');
+            const resultCanvas = document.getElementById('resultCanvas');
+            const ctxOrig = origCanvas.getContext('2d');
+            const ctxRes = resultCanvas.getContext('2d');
+
+            const statusText = document.getElementById('statusText');
+            const statusDot = document.getElementById('statusDot');
+            const angleBadge = document.getElementById('angleBadge');
+            
+            const origMeta = document.getElementById('origMeta');
+            const resMeta = document.getElementById('resMeta');
+            const origDim = document.getElementById('origDim');
+            const detectedBg = document.getElementById('detectedBg');
+            const resDim = document.getElementById('resDim');
+            const calcThreshold = document.getElementById('calcThreshold');
+
+            const downloadBtn = document.getElementById('downloadBtn');
+            const rotateBtn = document.getElementById('rotateBtn');
+            const flip180Btn = document.getElementById('flip180Btn');
+            const reprocessBtn = document.getElementById('reprocessBtn');
+
+            // State
+            let sourceImageData = null;
+            let resultImageData = null;
+            let originalFileName = 'signature';
+
+            // Status display helper
+            function setStatus(msg, type = 'idle') {
+                statusText.textContent = msg;
+                statusDot.className = 'dot ' + type;
+            }
+
+            // Fit canvas view responsively
+            function fitCanvas(canvas, w, h) {
+                canvas.width = w;
+                canvas.height = h;
+            }
+
+            // Render ImageData to canvas
+            function renderToCanvas(canvas, imgData) {
+                fitCanvas(canvas, imgData.width, imgData.height);
+                const ctx = canvas.getContext('2d');
+                ctx.putImageData(imgData, 0, 0);
+            }
+
+            // --- AUTO PROCESSING CORE ---
+
+            // 1. Automatic Background Detection via Border Median Sampling
+            function detectBgColorMedian(imageData) {
+                const data = imageData.data;
+                const w = imageData.width;
+                const h = imageData.height;
+
+                const rVals = [];
+                const gVals = [];
+                const bVals = [];
+
+                const rimW = Math.max(1, Math.floor(w * 0.04));
+                const rimH = Math.max(1, Math.floor(h * 0.04));
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        if (x < rimW || x >= w - rimW || y < rimH || y >= h - rimH) {
+                            const idx = (y * w + x) * 4;
+                            rVals.push(data[idx]);
+                            gVals.push(data[idx + 1]);
+                            bVals.push(data[idx + 2]);
+                        }
+                    }
+                }
+
+                rVals.sort((a, b) => a - b);
+                gVals.sort((a, b) => a - b);
+                bVals.sort((a, b) => a - b);
+
+                const mid = Math.floor(rVals.length / 2);
+                return {
+                    r: rVals[mid],
+                    g: gVals[mid],
+                    b: bVals[mid]
+                };
+            }
+
+            // 2. Automatic Otsu's Threshold Calculation
+            function calculateOtsuThreshold(imageData, bg) {
+                const data = imageData.data;
+                const total = data.length / 4;
+                const maxDist = Math.sqrt(255 * 255 * 3);
+                const hist = new Int32Array(256);
+
+                for (let i = 0; i < total; i++) {
+                    const idx = i * 4;
+                    const dr = data[idx] - bg.r;
+                    const dg = data[idx + 1] - bg.g;
+                    const db = data[idx + 2] - bg.b;
+                    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+                    const bin = Math.min(255, Math.floor((dist / maxDist) * 255));
+                    hist[bin]++;
+                }
+
+                let sum = 0;
+                for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+                let sumB = 0;
+                let wB = 0;
+                let wF = 0;
+                let maxVar = 0;
+                let optimalBin = 30;
+
+                for (let t = 0; t < 256; t++) {
+                    wB += hist[t];
+                    if (wB === 0) continue;
+                    wF = total - wB;
+                    if (wF === 0) break;
+
+                    sumB += t * hist[t];
+                    const mB = sumB / wB;
+                    const mF = (sum - sumB) / wF;
+
+                    const varBetween = wB * wF * (mB - mF) * (mB - mF);
+                    if (varBetween > maxVar) {
+                        maxVar = varBetween;
+                        optimalBin = t;
+                    }
+                }
+
+                const thresholdDistance = (optimalBin / 255) * maxDist;
+                return Math.max(18, thresholdDistance);
+            }
+
+            // 3. Remove Background with Smooth Antialiasing
+            function removeBackgroundAuto(imageData, bg, threshold) {
+                const src = imageData.data;
+                const out = new ImageData(imageData.width, imageData.height);
+                const dst = out.data;
+
+                const lowerCutoff = threshold * 0.65;
+                const upperCutoff = threshold * 1.25;
+                const range = Math.max(1, upperCutoff - lowerCutoff);
+
+                for (let i = 0; i < src.length; i += 4) {
+                    const r = src[i];
+                    const g = src[i + 1];
+                    const b = src[i + 2];
+
+                    const dr = r - bg.r;
+                    const dg = g - bg.g;
+                    const db = b - bg.b;
+                    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+                    if (dist <= lowerCutoff) {
+                        dst[i] = 0;
+                        dst[i + 1] = 0;
+                        dst[i + 2] = 0;
+                        dst[i + 3] = 0;
+                    } else if (dist >= upperCutoff) {
+                        dst[i] = r;
+                        dst[i + 1] = g;
+                        dst[i + 2] = b;
+                        dst[i + 3] = 255;
+                    } else {
+                        const alphaRatio = (dist - lowerCutoff) / range;
+                        dst[i] = r;
+                        dst[i + 1] = g;
+                        dst[i + 2] = b;
+                        dst[i + 3] = Math.round(alphaRatio * 255);
+                    }
+                }
+                return out;
+            }
+
+            // 4. Reliable Orientation Detection (Always maps Top -> Left for vertical signatures)
+            function autoStraighten(imageData) {
+                const data = imageData.data;
+                const w = imageData.width;
+                const h = imageData.height;
+
+                let minX = w, minY = h, maxX = 0, maxY = 0;
+                let count = 0;
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        if (data[(y * w + x) * 4 + 3] > 60) {
+                            count++;
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+
+                if (count < 20) return { image: imageData, angle: 0 };
+
+                const bboxW = maxX - minX + 1;
+                const bboxH = maxY - minY + 1;
+
+                // If portrait orientation (height > width): 
+                // Always rotate 270° (90° CCW) so top of image becomes the left side of standard LTR text.
+                if (bboxW < bboxH) {
+                    const rotated = rotate90Deg(imageData, 270);
+                    return { image: rotated, angle: 270 };
+                }
+
+                return { image: imageData, angle: 0 };
+            }
+
+            // 5. Rotate ImageData in steps of 90 degrees
+            function rotate90Deg(imageData, angle) {
+                let rot = (angle % 360 + 360) % 360;
+                if (rot === 0) return imageData;
+
+                const w = imageData.width;
+                const h = imageData.height;
+                const src = imageData.data;
+
+                const newW = (rot === 90 || rot === 270) ? h : w;
+                const newH = (rot === 90 || rot === 270) ? w : h;
+
+                const out = new ImageData(newW, newH);
+                const dst = out.data;
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const srcIdx = (y * w + x) * 4;
+                        let dstX, dstY;
+
+                        if (rot === 90) {
+                            dstX = h - 1 - y;
+                            dstY = x;
+                        } else if (rot === 180) {
+                            dstX = w - 1 - x;
+                            dstY = h - 1 - y;
+                        } else if (rot === 270) {
+                            dstX = y;
+                            dstY = w - 1 - x;
+                        }
+
+                        const dstIdx = (dstY * newW + dstX) * 4;
+                        dst[dstIdx] = src[srcIdx];
+                        dst[dstIdx + 1] = src[srcIdx + 1];
+                        dst[dstIdx + 2] = src[srcIdx + 2];
+                        dst[dstIdx + 3] = src[srcIdx + 3];
+                    }
+                }
+                return out;
+            }
+
+            // 6. Crop to Content Bounds
+            function autoCrop(imageData) {
+                const data = imageData.data;
+                const w = imageData.width;
+                const h = imageData.height;
+
+                let minX = w, minY = h, maxX = 0, maxY = 0;
+                let found = false;
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        if (data[(y * w + x) * 4 + 3] > 20) {
+                            found = true;
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+
+                if (!found) return imageData;
+
+                const pad = 12;
+                minX = Math.max(0, minX - pad);
+                minY = Math.max(0, minY - pad);
+                maxX = Math.min(w - 1, maxX + pad);
+                maxY = Math.min(h - 1, maxY + pad);
+
+                const cropW = maxX - minX + 1;
+                const cropH = maxY - minY + 1;
+
+                const cropped = new ImageData(cropW, cropH);
+                const dst = cropped.data;
+
+                for (let y = minY; y <= maxY; y++) {
+                    for (let x = minX; x <= maxX; x++) {
+                        const srcIdx = (y * w + x) * 4;
+                        const dstIdx = ((y - minY) * cropW + (x - minX)) * 4;
+                        dst[dstIdx] = data[srcIdx];
+                        dst[dstIdx + 1] = data[srcIdx + 1];
+                        dst[dstIdx + 2] = data[srcIdx + 2];
+                        dst[dstIdx + 3] = data[srcIdx + 3];
+                    }
+                }
+                return cropped;
+            }
+
+            // --- MASTER AUTOMATIC PROCESSOR ---
+            function processAutomatically() {
+                if (!sourceImageData) return;
+
+                setStatus('Processing automatically...', 'processing');
+
+                setTimeout(() => {
+                    try {
+                        const bg = detectBgColorMedian(sourceImageData);
+                        detectedBg.textContent = `BG: rgb(${bg.r}, ${bg.g}, ${bg.b})`;
+
+                        const threshold = calculateOtsuThreshold(sourceImageData, bg);
+                        calcThreshold.textContent = `Threshold: ${Math.round(threshold)}`;
+
+                        let processed = removeBackgroundAuto(sourceImageData, bg, threshold);
+
+                        const orientation = autoStraighten(processed);
+                        processed = orientation.image;
+
+                        processed = autoCrop(processed);
+
+                        resultImageData = processed;
+                        renderToCanvas(resultCanvas, processed);
+
+                        angleBadge.textContent = orientation.angle !== 0 ? `Rotated ${orientation.angle}°` : 'Original Angle';
+                        resDim.textContent = `${processed.width} × ${processed.height} px`;
+                        
+                        origMeta.style.display = 'flex';
+                        resMeta.style.display = 'flex';
+
+                        downloadBtn.disabled = false;
+                        rotateBtn.disabled = false;
+                        flip180Btn.disabled = false;
+                        reprocessBtn.disabled = false;
+
+                        setStatus('Complete! Ready for download.', 'done');
+                    } catch (err) {
+                        console.error(err);
+                        setStatus('Processing error: ' + err.message, 'error');
+                    }
+                }, 40);
+            }
+
+            // File Handler
+            function handleFile(file) {
+                if (!file || !file.type.startsWith('image/')) {
+                    setStatus('Please upload a valid image file.', 'error');
+                    return;
+                }
+
+                originalFileName = file.name.replace(/\.[^.]+$/, '') || 'signature';
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = img.width;
+                        tempCanvas.height = img.height;
+                        const tempCtx = tempCanvas.getContext('2d');
+                        tempCtx.drawImage(img, 0, 0);
+
+                        sourceImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+                        renderToCanvas(origCanvas, sourceImageData);
+
+                        origDim.textContent = `${img.width} × ${img.height} px`;
+                        processAutomatically();
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Events
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) handleFile(e.target.files[0]);
+                e.target.value = '';
+            });
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+            });
+
+            rotateBtn.addEventListener('click', () => {
+                if (!resultImageData) return;
+                let rotated = rotate90Deg(resultImageData, 90);
+                resultImageData = autoCrop(rotated);
+                renderToCanvas(resultCanvas, resultImageData);
+                resDim.textContent = `${resultImageData.width} × ${resultImageData.height} px`;
+                angleBadge.textContent = 'Rotated +90°';
+                setStatus('Rotated 90°.');
+            });
+
+            flip180Btn.addEventListener('click', () => {
+                if (!resultImageData) return;
+                let rotated = rotate90Deg(resultImageData, 180);
+                resultImageData = autoCrop(rotated);
+                renderToCanvas(resultCanvas, resultImageData);
+                resDim.textContent = `${resultImageData.width} × ${resultImageData.height} px`;
+                angleBadge.textContent = 'Flipped 180°';
+                setStatus('Flipped 180°.');
+            });
+
+            reprocessBtn.addEventListener('click', () => {
+                processAutomatically();
+            });
+
+            downloadBtn.addEventListener('click', () => {
+                if (!resultImageData) return;
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = resultImageData.width;
+                tempCanvas.height = resultImageData.height;
+                const ctx = tempCanvas.getContext('2d');
+                ctx.putImageData(resultImageData, 0, 0);
+
+                const link = document.createElement('a');
+                link.download = `${originalFileName}_cleaned.png`;
+                link.href = tempCanvas.toDataURL('image/png');
+                link.click();
+            });
+
+            // Initial Canvas Setup
+            fitCanvas(origCanvas, 320, 200);
+            fitCanvas(resultCanvas, 320, 200);
+            ctxOrig.fillStyle = '#94a3b8';
+            ctxOrig.font = '14px sans-serif';
+            ctxOrig.textAlign = 'center';
+            ctxOrig.fillText('Source preview will appear here', 160, 105);
+
+            ctxRes.fillStyle = '#94a3b8';
+            ctxRes.font = '14px sans-serif';
+            ctxRes.textAlign = 'center';
+            ctxRes.fillText('Cleaned signature preview', 160, 105);
+        })();
+    </script>
+</body>
+</html>
