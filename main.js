@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { spawn } from "child_process"; // CHANGED: spawnSync -> spawn (non-blocking)
+import { spawn } from "child_process";
 import Database from "better-sqlite3";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,12 +82,10 @@ ipcMain.on("get-latest-sr-no", (event) => {
 });
 
 // ==========================================
-// Helper: run generate_doc.py WITHOUT blocking the main process,
-// and resolve/reject once it's done. This replaces spawnSync.
+// Helper: run generate_doc.py WITHOUT blocking the main process
 // ==========================================
 function generateDocuments(pythonPayload) {
   return new Promise((resolve, reject) => {
-    const templateDirExists = true; // kept for clarity, no behavior change
     const pythonScriptPath = path.join(__dirname, "generate_doc.py");
     const pythonExecutable =
       process.platform === "win32" ? "python" : "python3";
@@ -102,6 +100,7 @@ function generateDocuments(pythonPayload) {
     pythonProcess.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
+
     pythonProcess.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
@@ -113,8 +112,24 @@ function generateDocuments(pythonPayload) {
 
     pythonProcess.on("close", () => {
       if (stderr) console.error("Python Stderr Output:", stderr);
+
       try {
-        const result = JSON.parse(stdout.trim());
+        const jsonLines = stdout
+          .trim()
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith("{") && line.endsWith("}"));
+
+        if (jsonLines.length === 0) {
+          throw new Error(
+            "No JSON string returned from Python script.\nPython Output: " +
+              stdout,
+          );
+        }
+
+        const lastJsonLine = jsonLines[jsonLines.length - 1];
+        const result = JSON.parse(lastJsonLine);
+
         resolve(result);
       } catch (parseErr) {
         console.error("Failed to parse Python response:", stdout);
@@ -129,8 +144,6 @@ function generateDocuments(pythonPayload) {
 
 // ==========================================
 // 2. IPC Handler: Add Customer & Generate Documents
-// CHANGED: ipcMain.on(...sendSync) -> ipcMain.handle(...invoke), async,
-// with progress events sent back to the renderer at each stage.
 // ==========================================
 ipcMain.handle("add-customer", async (event, customer) => {
   const sender = event.sender;
@@ -176,10 +189,15 @@ ipcMain.handle("add-customer", async (event, customer) => {
 
     const templateDir = path.join(__dirname, "template");
 
+    if (!fs.existsSync(templateDir)) {
+      throw new Error(`Template directory not found at: ${templateDir}`);
+    }
+
     const pythonPayload = JSON.stringify({
       template_dir: templateDir,
       target_dir: targetDir,
       sr_no: sr_no,
+      doc_type: "all",
       customer_name: name,
       customer_address: address,
       date: date,
@@ -331,7 +349,6 @@ ipcMain.on("get-client-files", (event, { sr_no, name }) => {
       const isSignature = fileName.toLowerCase().includes("signature");
       let base64Image = null;
 
-      // Convert PNG/JPG signature files directly into Base64 Data URI for instant rendering
       if (isSignature && fs.existsSync(fullPath)) {
         try {
           const fileBuffer = fs.readFileSync(fullPath);
@@ -368,6 +385,131 @@ ipcMain.on("open-file", (event, filePath) => {
     event.returnValue = { success: true };
   } else {
     event.returnValue = { success: false, error: "File not found" };
+  }
+});
+
+// ==========================================
+// 8. IPC Handler: Fetch Next Invoice Number Sync
+// ==========================================
+ipcMain.on("get-next-invoice-no", (event) => {
+  try {
+    const rows = db.prepare("SELECT invoice_no FROM invoices").all();
+
+    let maxNum = 0;
+
+    rows.forEach((row) => {
+      if (row.invoice_no) {
+        const matches = row.invoice_no.match(/\d+/g);
+        if (matches) {
+          const num = parseInt(matches.join(""), 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+    });
+
+    const nextInvoiceNo = maxNum > 0 ? maxNum + 1 : 1001;
+    event.returnValue = { success: true, nextInvoiceNo: String(nextInvoiceNo) };
+  } catch (err) {
+    console.error("Error fetching next invoice_no:", err);
+    event.returnValue = {
+      success: false,
+      nextInvoiceNo: "1001",
+      error: err.message,
+    };
+  }
+});
+
+// ==========================================
+// 9. IPC Handler: Create Invoice
+// ==========================================
+ipcMain.handle("create-invoice", async (event, invoiceData) => {
+  try {
+    const { sr_no, name, address, include_installation } = invoiceData;
+
+    const safeName = (name || "Unknown").replace(/[/\\?%*:|"<>]/g, "_").trim();
+    const folderName = `${sr_no} ${safeName}`;
+    const targetDir = path.join(__dirname, "DATA", "files", folderName);
+
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const templateDir = path.join(__dirname, "template");
+
+    if (!fs.existsSync(templateDir)) {
+      return {
+        success: false,
+        error: `Template directory not found at: ${templateDir}`,
+      };
+    }
+
+    const dateStr = new Date().toLocaleDateString("en-IN");
+
+    const pythonPayload = JSON.stringify({
+      template_dir: templateDir,
+      target_dir: targetDir,
+      sr_no: sr_no,
+      doc_type: "invoice",
+      customer_name: name,
+      customer_address: address,
+      date: dateStr,
+      invoice_no: invoiceData.invoice_no,
+      panel_company: invoiceData.panel_company,
+      panel_watt: invoiceData.panel_watt,
+      panel_quantity: invoiceData.panel_quantity,
+      panel_total_cost: invoiceData.panel_total_cost,
+      inverter_company: invoiceData.inverter_company,
+      inverter_watt: invoiceData.inverter_watt,
+      inverter_total_cost: invoiceData.inverter_total_cost,
+      structure_watt: invoiceData.structure_watt,
+      structure_total_cost: invoiceData.structure_total_cost,
+      installation_total_cost: invoiceData.installation_total_cost,
+      include_installation: include_installation, // Fixed to match payload from React
+      total_amount: invoiceData.total_amount,
+    });
+
+    const pyResult = await generateDocuments(pythonPayload);
+
+    if (!pyResult.success) {
+      throw new Error(pyResult.error || "Unknown python execution error");
+    }
+
+    // Save record to DB
+    const stmt = db.prepare(`
+      INSERT INTO invoices (
+        customer_sr_no, invoice_no, date,
+        panel_company, panel_watt, panel_quantity, panel_total_cost,
+        inverter_company, inverter_watt, inverter_total_cost,
+        structure_total_cost, installation_total_cost
+      ) VALUES (
+        @customer_sr_no, @invoice_no, @date,
+        @panel_company, @panel_watt, @panel_quantity, @panel_total_cost,
+        @inverter_company, @inverter_watt, @inverter_total_cost,
+        @structure_total_cost, @installation_total_cost
+      )
+    `);
+
+    stmt.run({
+      customer_sr_no: sr_no,
+      invoice_no: invoiceData.invoice_no,
+      date: dateStr,
+      panel_company: invoiceData.panel_company,
+      panel_watt: invoiceData.panel_watt,
+      panel_quantity: invoiceData.panel_quantity,
+      panel_total_cost: parseFloat(invoiceData.panel_total_cost) || 0,
+      inverter_company: invoiceData.inverter_company,
+      inverter_watt: invoiceData.inverter_watt,
+      inverter_total_cost: parseFloat(invoiceData.inverter_total_cost) || 0,
+      structure_total_cost: parseFloat(invoiceData.structure_total_cost) || 0,
+      installation_total_cost: include_installation
+        ? parseFloat(invoiceData.installation_total_cost) || 0
+        : 0,
+    });
+
+    return { success: true, files: pyResult.files };
+  } catch (err) {
+    console.error("Invoice Creation Error:", err);
+    return { success: false, error: err.message };
   }
 });
 

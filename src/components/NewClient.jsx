@@ -5,6 +5,10 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
+  UserPlus,
+  Zap,
+  DollarSign,
+  FileSignature,
 } from "lucide-react";
 
 const COMPANY_OPTIONS = [
@@ -42,7 +46,6 @@ export default function NewClient() {
     type: "idle",
   });
 
-  // NEW: saving / progress state for the Save button
   const [isSaving, setIsSaving] = useState(false);
   const [progress, setProgress] = useState({
     step: 0,
@@ -50,7 +53,6 @@ export default function NewClient() {
     message: "",
   });
 
-  // Canvas Refs & Processing States
   const origCanvasRef = useRef(null);
   const resCanvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -58,12 +60,10 @@ export default function NewClient() {
   const [sourceImgData, setSourceImgData] = useState(null);
   const [resultImgData, setResultImgData] = useState(null);
 
-  // --- FETCH AUTO-INCREMENTED SR NO ---
   const fetchNextSrNo = () => {
     if (window.require) {
       try {
         const { ipcRenderer } = window.require("electron");
-        // Request the latest customer SR NO from IPC
         const response = ipcRenderer.sendSync("get-latest-sr-no");
         if (response && response.success) {
           const nextSrNo = (parseInt(response.latestSrNo, 10) || 0) + 1;
@@ -76,7 +76,6 @@ export default function NewClient() {
         setFormData((prev) => ({ ...prev, sr_no: 1 }));
       }
     } else {
-      // Fallback default for browser mode testing
       setFormData((prev) => ({ ...prev, sr_no: 1001 }));
     }
   };
@@ -85,8 +84,6 @@ export default function NewClient() {
     fetchNextSrNo();
   }, []);
 
-  // NEW: listen for progress events pushed from the main process while
-  // "add-customer" is running, so the UI can show real step-by-step progress.
   useEffect(() => {
     if (!window.require) return;
     const { ipcRenderer } = window.require("electron");
@@ -100,13 +97,6 @@ export default function NewClient() {
       ipcRenderer.removeListener("add-customer-progress", handleProgress);
     };
   }, []);
-
-  // --- IMAGE PROCESSING & BACKGROUND REMOVAL UTILITIES ---
-  // (unchanged below — omitted here only for brevity in this snippet set,
-  // keep all of your existing fitCanvas / renderToCanvas / detectBgColorMedian /
-  // calculateOtsuThreshold / removeBackgroundAuto / rotate90Deg / autoCrop /
-  // autoStraighten / processAutomatically / handleFile / handleRotateManual /
-  // handleChange functions exactly as they were.)
 
   const fitCanvas = (canvas, w, h) => {
     canvas.width = w;
@@ -361,7 +351,6 @@ export default function NewClient() {
         setResultImgData(processed);
         renderToCanvas(resCanvasRef.current, processed);
 
-        // Convert processed canvas to Base64
         const tempCanvas = document.createElement("canvas");
         tempCanvas.width = processed.width;
         tempCanvas.height = processed.height;
@@ -435,11 +424,9 @@ export default function NewClient() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // --- SAVE FORM DATA ---
-  // CHANGED: sendSync -> invoke (async, non-blocking), plus isSaving/progress state.
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSaving) return; // guard against double-submit while a save is in flight
+    if (isSaving) return;
 
     const payload = {
       ...formData,
@@ -468,7 +455,6 @@ export default function NewClient() {
             text: `Customer saved successfully! Signature exported to DATA/files/${payload.sr_no} ${payload.name}/`,
           });
 
-          // Reset Form
           setFormData({
             sr_no: "",
             name: "",
@@ -485,7 +471,6 @@ export default function NewClient() {
             signature_path: "",
           });
 
-          // Fetch the newly incremented serial number for the next entry
           fetchNextSrNo();
           setSourceImgData(null);
           setResultImgData(null);
@@ -513,308 +498,302 @@ export default function NewClient() {
     : 0;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6 bg-[#0B0F19] text-white">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-white">ADD NEW CUSTOMER</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Enter complete details to save to system database
-        </p>
+    <div className="w-full h-full bg-[#0B0F19] text-white p-6 overflow-y-auto">
+      {/* Header */}
+      <header className="mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <UserPlus className="w-6 h-6 text-amber-500" />
+            Add New Client
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Fill in specs and process signature for database entry
+          </p>
+        </div>
+
+        {statusMessage.text && (
+          <div
+            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${
+              statusMessage.type === "success"
+                ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                : "bg-rose-500/10 border border-rose-500/30 text-rose-400"
+            }`}
+          >
+            {statusMessage.type === "success" ? (
+              <CheckCircle className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            )}
+            <span>{statusMessage.text}</span>
+          </div>
+        )}
       </header>
 
-      {statusMessage.text && (
-        <div
-          className={`p-4 rounded-lg text-sm font-medium ${
-            statusMessage.type === "success"
-              ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-              : "bg-rose-500/10 border border-rose-500/30 text-rose-400"
-          }`}
-        >
-          {statusMessage.text}
-        </div>
-      )}
+      {/* Main Grid: 8 cols left / 4 cols right */}
+      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-6">
+        {/* LEFT SECTION (Client + Tech Specs) */}
+        <div className="col-span-12 xl:col-span-8 space-y-6">
+          {/* Client Details */}
+          <div className="bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-4">
+            <h2 className="text-sm font-bold text-amber-500 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-3">
+              Client & Project Details
+            </h2>
 
-      {/* NEW: progress bar shown only while saving */}
-      {isSaving && (
-        <div className="p-4 rounded-lg bg-[#131A2B] border border-slate-800 space-y-2">
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>{progress.message || "Saving..."}</span>
-            <span>{progressPercent}%</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-[#0F1423] overflow-hidden">
-            <div
-              className="h-full bg-amber-500 transition-all duration-300 ease-out"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Details */}
-        <div className="bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h2 className="text-lg font-semibold text-amber-500 border-b border-slate-800 pb-2">
-            Basic Information
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Serial No. (SR NO) *
-              </label>
-              <input
-                type="number"
-                name="sr_no"
-                required
-                readOnly
-                value={formData.sr_no}
-                onChange={handleChange}
-                placeholder="Auto-generated"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 cursor-not-allowed opacity-80"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Customer Name *
-              </label>
-              <input
-                type="text"
-                name="name"
-                required
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="Full Name"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Date
-              </label>
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                onChange={handleChange}
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Address
-              </label>
-              <input
-                type="text"
-                name="address"
-                value={formData.address}
-                onChange={handleChange}
-                placeholder="Customer Address"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                System Capacity (KW)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                name="kw"
-                value={formData.kw}
-                onChange={handleChange}
-                placeholder="e.g. 5.5"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* System Specifications */}
-        <div className="bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h2 className="text-lg font-semibold text-amber-500 border-b border-slate-800 pb-2">
-            System Specifications
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Panel Company
-              </label>
-              <select
-                name="panel_company"
-                value={formData.panel_company}
-                onChange={handleChange}
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              >
-                {COMPANY_OPTIONS.map((company) => (
-                  <option
-                    key={company}
-                    value={company}
-                    className="bg-[#0F1423] text-white"
-                  >
-                    {company}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Panel Wattage (W)
-              </label>
-              <input
-                type="number"
-                name="panel_watt"
-                value={formData.panel_watt}
-                onChange={handleChange}
-                placeholder="e.g. 540"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Panel Quantity
-              </label>
-              <input
-                type="number"
-                name="panel_quantity"
-                value={formData.panel_quantity}
-                onChange={handleChange}
-                placeholder="e.g. 10"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Inverter Company
-              </label>
-              <select
-                name="inverter_company"
-                value={formData.inverter_company}
-                onChange={handleChange}
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              >
-                {COMPANY_OPTIONS.map((company) => (
-                  <option
-                    key={company}
-                    value={company}
-                    className="bg-[#0F1423] text-white"
-                  >
-                    {company}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Inverter Capacity (KW/Watt)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                name="inverter_watt"
-                value={formData.inverter_watt}
-                onChange={handleChange}
-                placeholder="e.g. 5.0"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Structure Capacity (Watt)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                name="structure_watt"
-                value={formData.structure_watt}
-                onChange={handleChange}
-                placeholder="e.g. 5000"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Cost & Signature Processing */}
-        <div className="bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h2 className="text-lg font-semibold text-amber-500 border-b border-slate-800 pb-2">
-            Cost & Signature Processing
-          </h2>
-
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Total Cost (₹)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                name="cost"
-                value={formData.cost}
-                onChange={handleChange}
-                placeholder="0.00"
-                className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-400">
-                Upload Signature Image
-              </label>
-
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  if (e.dataTransfer.files.length)
-                    handleFile(e.dataTransfer.files[0]);
-                }}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 ${
-                  isDragging
-                    ? "border-amber-500 bg-amber-500/10"
-                    : "border-slate-800 bg-[#0F1423] hover:border-slate-700"
-                }`}
-              >
+            <div className="grid grid-cols-12 gap-4">
+              <div className="col-span-12 sm:col-span-3">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  SR NO *
+                </label>
                 <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files.length) handleFile(e.target.files[0]);
-                  }}
+                  type="number"
+                  name="sr_no"
+                  required
+                  readOnly
+                  value={formData.sr_no}
+                  onChange={handleChange}
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-amber-400 font-semibold text-sm focus:outline-none cursor-not-allowed opacity-90"
                 />
-                <Upload className="mx-auto h-8 w-8 text-amber-500 mb-2" />
-                <p className="text-sm font-medium text-white">
-                  Drag and drop signature here, or{" "}
-                  <span className="text-amber-500">browse file</span>
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  PNG, JPG, WebP supported
-                </p>
+              </div>
+
+              <div className="col-span-12 sm:col-span-9">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Customer Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
+                  placeholder="Full Name"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-8">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.address}
+                  onChange={handleChange}
+                  placeholder="Installation Address"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-4">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  name="date"
+                  value={formData.date}
+                  onChange={handleChange}
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
               </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="bg-[#0F1423] border border-slate-800 rounded-xl p-4 flex flex-col items-center">
+          {/* Hardware & Capacity Specs */}
+          <div className="bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-4">
+            <h2 className="text-sm font-bold text-amber-500 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Zap className="w-4 h-4" /> Hardware & Capacity Specs
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Total System (KW)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="kw"
+                  value={formData.kw}
+                  onChange={handleChange}
+                  placeholder="e.g. 5.5"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Panel Brand
+                </label>
+                <select
+                  name="panel_company"
+                  value={formData.panel_company}
+                  onChange={handleChange}
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                >
+                  {COMPANY_OPTIONS.map((company) => (
+                    <option key={company} value={company}>
+                      {company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Panel Wattage (W)
+                </label>
+                <input
+                  type="number"
+                  name="panel_watt"
+                  value={formData.panel_watt}
+                  onChange={handleChange}
+                  placeholder="e.g. 540"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Panel Quantity
+                </label>
+                <input
+                  type="number"
+                  name="panel_quantity"
+                  value={formData.panel_quantity}
+                  onChange={handleChange}
+                  placeholder="e.g. 10"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Inverter Brand
+                </label>
+                <select
+                  name="inverter_company"
+                  value={formData.inverter_company}
+                  onChange={handleChange}
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                >
+                  {COMPANY_OPTIONS.map((company) => (
+                    <option key={company} value={company}>
+                      {company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Inverter Cap. (KW)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="inverter_watt"
+                  value={formData.inverter_watt}
+                  onChange={handleChange}
+                  placeholder="e.g. 5.0"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Structure Cap. (W)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="structure_watt"
+                  value={formData.structure_watt}
+                  onChange={handleChange}
+                  placeholder="e.g. 5000"
+                  className="w-full p-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Total Project Cost (₹)
+                </label>
+                <div className="relative">
+                  <DollarSign className="w-4 h-4 absolute left-3 top-3 text-amber-500" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cost"
+                    value={formData.cost}
+                    onChange={handleChange}
+                    placeholder="0.00"
+                    className="w-full pl-9 pr-2.5 py-2.5 bg-[#0F1423] border border-slate-800 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 font-semibold"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT SECTION (Signature & Actions) */}
+        <div className="col-span-12 xl:col-span-4 flex flex-col justify-between bg-[#131A2B] border border-slate-800 p-6 rounded-2xl space-y-6">
+          <div className="space-y-4">
+            <h2 className="text-sm font-bold text-amber-500 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 pb-3">
+              <span className="flex items-center gap-2">
+                <FileSignature className="w-4 h-4" /> Signature Processing
+              </span>
+              <span className="text-xs lowercase font-normal text-slate-400">
+                auto-clean enabled
+              </span>
+            </h2>
+
+            {/* Signature Upload Dropzone */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files.length)
+                  handleFile(e.dataTransfer.files[0]);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
+                isDragging
+                  ? "border-amber-500 bg-amber-500/10"
+                  : "border-slate-800 bg-[#0F1423] hover:border-slate-700"
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files.length) handleFile(e.target.files[0]);
+                }}
+              />
+              <Upload className="mx-auto h-7 w-7 text-amber-500 mb-2" />
+              <p className="text-sm font-medium text-white">
+                Drag & drop or{" "}
+                <span className="text-amber-500">browse file</span>
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                PNG, JPG, WebP supported
+              </p>
+            </div>
+
+            {/* Canvases Display */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#0F1423] border border-slate-800 rounded-xl p-3 flex flex-col items-center">
                 <span className="text-xs font-semibold text-slate-400 mb-2">
-                  Original Signature
+                  Original Image
                 </span>
-                <div className="w-full h-40 flex items-center justify-center bg-[#0B0F19] rounded-lg overflow-hidden border border-slate-800/80">
+                <div className="w-full h-36 flex items-center justify-center bg-[#0B0F19] rounded-lg border border-slate-800 overflow-hidden">
                   <canvas
                     ref={origCanvasRef}
                     className="max-h-full max-w-full object-contain"
@@ -822,13 +801,13 @@ export default function NewClient() {
                 </div>
               </div>
 
-              <div className="bg-[#0F1423] border border-slate-800 rounded-xl p-4 flex flex-col items-center relative">
+              <div className="bg-[#0F1423] border border-slate-800 rounded-xl p-3 flex flex-col items-center">
                 <div className="w-full flex justify-between items-center mb-2">
                   <span className="text-xs font-semibold text-amber-500">
-                    Cleaned Signature (Transparent)
+                    Cleaned Result
                   </span>
                   {resultImgData && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                       <button
                         type="button"
                         onClick={handleRotateManual}
@@ -849,7 +828,7 @@ export default function NewClient() {
                   )}
                 </div>
 
-                <div className="w-full h-40 flex items-center justify-center rounded-lg overflow-hidden border border-slate-800/80 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:12px_12px]">
+                <div className="w-full h-36 flex items-center justify-center rounded-lg border border-slate-800 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:10px_10px] overflow-hidden">
                   <canvas
                     ref={resCanvasRef}
                     className="max-h-full max-w-full object-contain"
@@ -860,30 +839,47 @@ export default function NewClient() {
 
             <div className="flex items-center gap-2 text-xs text-slate-400 px-1">
               {sigStatus.type === "done" && (
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
               )}
               {sigStatus.type === "error" && (
-                <AlertCircle className="w-4 h-4 text-rose-400" />
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
               )}
-              <span>{sigStatus.text}</span>
+              <span className="truncate">{sigStatus.text}</span>
             </div>
           </div>
-        </div>
 
-        {/* CHANGED: disabled while saving, shows progress text on the button itself */}
-        <button
-          type="submit"
-          disabled={isSaving}
-          className={`w-full font-semibold py-3.5 rounded-xl transition-colors shadow-lg shadow-amber-500/10 text-base ${
-            isSaving
-              ? "bg-amber-500/50 text-black/70 cursor-not-allowed"
-              : "bg-amber-500 text-black hover:bg-amber-400"
-          }`}
-        >
-          {isSaving
-            ? `${progress.message || "Saving..."} (${progressPercent}%)`
-            : "Save Customer & Export Signature"}
-        </button>
+          {/* Submit & Progress */}
+          <div className="space-y-3 pt-4 border-t border-slate-800">
+            {isSaving && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>{progress.message || "Saving..."}</span>
+                  <span>{progressPercent}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-[#0F1423] overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 transition-all duration-300 ease-out"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSaving}
+              className={`w-full font-semibold py-3.5 rounded-xl transition-colors shadow-lg shadow-amber-500/10 text-sm ${
+                isSaving
+                  ? "bg-amber-500/50 text-black/70 cursor-not-allowed"
+                  : "bg-amber-500 text-black hover:bg-amber-400"
+              }`}
+            >
+              {isSaving
+                ? `${progress.message || "Saving..."} (${progressPercent}%)`
+                : "Save Customer & Export Signature"}
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   );
